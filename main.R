@@ -1,5 +1,11 @@
-library(dplyr)
-library(janitor)
+if (!require(dplyr)) {
+  install.packages('dplyr')
+  library(dplyr)
+}
+if (!require(janitor)) {
+  install.packages('janitor')
+  library(janitor)
+}
 
 source("R/functions.R")
 
