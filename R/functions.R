@@ -1,4 +1,11 @@
-update_team_ratings <- function() {
+library(rvest)
+
+update_league <- function(league_id) {
+  games_champions <- scrape_league(league_id, save = TRUE)
+  team_ratings <- update_team_ratings(league_id)
+}
+
+update_team_ratings <- function(league_id) {
   library(tidyverse); options(tibble.width = Inf)
   library(magrittr)
   theme_set(hrbrthemes::theme_ipsum_pub())
@@ -8,9 +15,12 @@ update_team_ratings <- function() {
     axis.title.y = element_text(hjust = 0.5))
   library(cmdstanr)
   
-  games <- read.csv('Data/games.csv', header = T) %>% 
+  games <- readRDS(glue::glue("Data/games_{league_id}.RDS"))
+  
+  games <- games %>% 
     select(t1, t2, t1_score, t2_score) %>% 
-    as_tibble()
+    as_tibble() |> 
+    filter(!is.na(t1_score))
   
   teams <- c(games$t1, games$t2) %>% unique() %>% sort()
   
@@ -164,10 +174,9 @@ update_team_ratings <- function() {
   
   final_ratings
   
-  # saveRDS(final_ratings, file = "R/ratings.RDS")
-  saveRDS(ratings_full, file = "R/ratings_full.RDS")
+  saveRDS(ratings_full, file = glue::glue("Data/ratings_full_{league_id}.RDS"))
+  saveRDS(log_alpha, file = glue::glue("Data/log_alpha_{league_id}.RDS"))
   
-  saveRDS(log_alpha, file = "R/log_alpha.RDS")
   
   final_ratings |> 
     rename(
@@ -187,14 +196,15 @@ update_team_ratings <- function() {
       "Defensive Rating" = log_beta_def,
       "Net Rating" = log_beta_net
     ) |> select(-sd_off, -sd_def, -sd_net) |> 
-    write.csv("ratings.csv")
+    # write.csv("ratings.csv")
+    saveRDS(file = glue::glue("Data/ratings_{league_id}.RDS"))
   
   final_ratings
 }
 
-sim_one_game <- function(t1, t2) {
-  ratings_full <- readRDS("R/ratings_full.RDS")
-  log_alpha <- readRDS("R/log_alpha.RDS")
+sim_one_game <- function(t1, t2, league_id) {
+  ratings_full <- readRDS(glue::glue("Data/ratings_full_{league_id}.RDS"))
+  log_alpha <- readRDS(glue::glue("Data/log_alpha_{league_id}.RDS"))
   
   t1_ratings <- ratings_full |> filter(team == t1)
   t2_ratings <- ratings_full |> filter(team == t2)
@@ -222,5 +232,97 @@ sim_one_game <- function(t1, t2) {
   
   
 }
+
+
+scrape_league <- function(league_id, save = TRUE) {
+  league_url <- glue::glue("https://sports.playmetrics.com/external/league/{league_id}")
+  standings_page <- glue::glue("{league_url}/standings.html")
+  
+  webpage <- read_html(standings_page)
+  
+  standings <- webpage |> html_table() |> pluck(1)
+  
+  team_ids <- webpage |> html_elements(".team-name") |> html_attr("href") |> 
+    str_extract("(?<=/)[0-9]+(?=/)")
+  
+  team_id_df <- tibble(
+    team = standings$Team,
+    id = team_ids,
+    league_url = league_url,
+    url = glue::glue("{league_url}/{id}/schedule.html?page=Standings")
+  )
+  
+  rw <- 1
+  parse_one_team <- function(rw, team_id_df) {
+    webpage <- read_html(team_id_df$url[rw])
+    
+    tb <- webpage |> html_table()
+    team_name <- team_id_df$team[rw]
+    
+    # game <- tb[[9]]
+    parse_one_game <- function(game, team) {
+      opponent <- game$Game |> str_extract("(?<=\\s)[A-Z].+")
+      game_result <- game$Score |> str_sub(1, 1)
+      game_score <- game$Score |> str_extract("(?<=\\s)[0-9].+") |> 
+        str_remove_all("\\s")
+      
+      if (is.na(game_score)) {
+        team_score <- NA
+        opp_score <- NA
+      } else {
+        team_score = game_score |> str_extract(".+(?=\\-)") |> as.numeric()
+        opp_score = game_score |> str_extract("(?<=\\-).+") |> as.numeric()
+      }
+      
+      team_vec_sorted <- sort(c(team, opponent))
+      
+      if (team_vec_sorted[1] == team) {
+        df <- tibble(
+          t1 = team,
+          t2 = opponent,
+          t1_score = team_score,
+          t2_score = opp_score,
+          time = game$Time
+        )
+        
+      } else {
+        df <- tibble(
+          t1 = opponent,
+          t2 = team,
+          t1_score = opp_score,
+          t2_score = team_score,
+          time = game$Time
+        )
+        
+      }
+      
+      df
+    }
+    
+    team_results <- tb[2:length(tb)] |> 
+      map_dfr(parse_one_game, team_name) |> 
+      mutate(game_day = 1:n())
+    
+    team_results
+    
+  }
+  
+  
+  games <- 1:nrow(team_id_df) |> 
+    map_dfr(parse_one_team, team_id_df) |> 
+    distinct() |> 
+    arrange(game_day)
+  
+  if (save) {
+    saveRDS(games, file = glue::glue("Data/games_{league_id}.RDS"))
+  }
+  
+  games
+}
+
+# games <- scrape_league(league_id)
+# games
+
+
 
 

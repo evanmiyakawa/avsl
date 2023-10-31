@@ -9,7 +9,7 @@ if (!require(janitor)) {
 
 source("R/functions.R")
 
-team_ratings <- read.csv('ratings.csv') |> janitor::clean_names()
+team_ratings <- readRDS('Data/r') |> janitor::clean_names()
 
 print(team_ratings)
 
