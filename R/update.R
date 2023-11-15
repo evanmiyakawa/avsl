@@ -16,7 +16,9 @@ source("R/functions.R")
 champions_league_id <- "317-1296-9a42f23f"
 update_league(champions_league_id)
 
+# sim_one_game("Bowlero", "Ace Rivington", league_id = champions_league_id)
 # sim_one_game(team_ratings_legends$team[1], team_ratings_legends$team[2], league_id = legends_league_id)
+# sim_one_game("Bowlero", "Aqua-Flo", league_id = legends_league_id)
 
 # update AVSL Legends
 
